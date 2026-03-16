@@ -12,7 +12,7 @@ class UserToggles:
     ephemeris_time_key_name = 'Epoch'
 
     ephemeris_start_time = dt.datetime(2025,9,27,22, 16,00,00)
-    ephermeris_stop_time = dt.datetime(2025,9,27,22, 22,00,00)
+    ephemeris_stop_time = dt.datetime(2025,9,27,22, 22,00,00)
 
     ephemeris_time_resolution = 1 # in seconds. NOTE:  it's VERY important to down-sample data, otherwise it will take FOREVER to compile
 
@@ -20,6 +20,7 @@ class UserToggles:
     alt_km_range_start = 90
     alt_km_range_end = 300
     alt_km_range_rez = 5
+
 
     #############################
     # --- MANUAL TIME TOGGLES ---
@@ -49,3 +50,8 @@ class UserToggles:
 
     # File I/O
     output_path = '/home/connor/Data/MODELS/Ionosphere/'
+
+    if useEphemerisData:
+        run_folder_path = f'{output_path}/{start_year}/{start_month}/{start_day}/{ephemeris_start_time.hour}H{ephemeris_start_time.minute}M{ephemeris_start_time.second}S_to_{ephemeris_stop_time.hour}H{ephemeris_stop_time.minute}M{ephemeris_stop_time.second}S/'
+    else:
+        run_folder_path = f'{output_path}/{start_year}/{start_month}/{start_day}/{start_hour}H{start_minute}M{start_second}S_to_{end_hour}H{end_minute}M{end_second}S/'
