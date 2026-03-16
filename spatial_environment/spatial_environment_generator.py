@@ -29,7 +29,7 @@ def spatial_environment_generator():
     # get the specific epoch/glat/glon range
     data_dict_ephemeris = stl.loadDictFromFile(UserToggles.path_to_ephemeris_data)
     low_idx = np.abs(data_dict_ephemeris[f'{UserToggles.ephemeris_time_key_name}'][0] - UserToggles.ephemeris_start_time).argmin()
-    high_idx = np.abs(data_dict_ephemeris[f'{UserToggles.ephemeris_time_key_name}'][0] - UserToggles.ephermeris_stop_time).argmin()
+    high_idx = np.abs(data_dict_ephemeris[f'{UserToggles.ephemeris_time_key_name}'][0] - UserToggles.ephemeris_stop_time).argmin()
 
     Epoch_range = data_dict_ephemeris[f'{UserToggles.ephemeris_time_key_name}'][0][low_idx:high_idx]
     glon_range = data_dict_ephemeris[f'{UserToggles.ephemeris_glon_key_name}'][0][low_idx:high_idx]
@@ -46,16 +46,18 @@ def spatial_environment_generator():
 
     # --- RUN THE IRI MODEL ---
     # prepare the output
-    example_var = np.zeros(shape=(len(Epoch_range), int((UserToggles.alt_km_range_end - UserToggles.alt_km_range_start) / UserToggles.alt_km_range_rez) + 1))
+
     data_dict_output = {
-        'alt_ephemeris':[np.array(Epoch_range), deepcopy(data_dict_ephemeris[f'{UserToggles.ephemeris_time_key_name}'][1])],
+        'Epoch_ephemeris':deepcopy(data_dict_ephemeris[f'{UserToggles.ephemeris_time_key_name}']),
         'glon_ephemeris':[np.array(glon_range), deepcopy(data_dict_ephemeris[f'{UserToggles.ephemeris_glon_key_name}'][1])],
         'glat_ephemeris':[np.array(glat_range), deepcopy(data_dict_ephemeris[f'{UserToggles.ephemeris_glat_key_name}'][1])],
-        'Epoch': [Epoch_range, {'DEPEND_0': 'Epoch'}],
-        'alt': [alt_km_range, {'UNITS': 'km','LABLAXIS':'altitude'}],
+        'Epoch_model': [Epoch_range, deepcopy(data_dict_ephemeris[f'{UserToggles.ephemeris_time_key_name}'][1])],
+        'alts_model': [alt_km_range, {'UNITS': 'km','LABLAXIS':'altitude'}],
+        'glons_model': [np.array(glon_range), deepcopy(data_dict_ephemeris[f'{UserToggles.ephemeris_glon_key_name}'][1])],
+        'glats_model': [np.array(glat_range), deepcopy(data_dict_ephemeris[f'{UserToggles.ephemeris_glat_key_name}'][1])],
     }
 
     # --- OUTPUT THE DATA ---
     stl.outputDataDict(
-        outputPath=f'{UserToggles.run_folder_path}/spatial_environment',
+        outputPath=f'{UserToggles.run_folder_path}/spatial_environment.cdf',
         data_dict=data_dict_output)

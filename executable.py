@@ -18,6 +18,11 @@ if dict_executable['regen_EVERYTHING']==1:
     for key in dict_executable.keys():
         dict_executable[key] = 1
 
+if dict_executable['regen_spatial_environment']==1:
+    print('\n--- Regenerating Spatial Environment ---', end='\n')
+    from src.spatial_environment.spatial_environment_generator import spatial_environment_generator
+    spatial_environment_generator()
+
 if dict_executable['regen_plasma_environment']==1:
     if UserToggles.useEphemerisData:
         print('\n--- Regenerating Plasma Environment IRI profile from ephemeris ---', end='\n')

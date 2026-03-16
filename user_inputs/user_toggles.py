@@ -21,7 +21,6 @@ class UserToggles:
     alt_km_range_end = 300
     alt_km_range_rez = 5
 
-
     #############################
     # --- MANUAL TIME TOGGLES ---
     #$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
