@@ -24,7 +24,7 @@ def geomagnetic_field_generator():
     ##############################
     # --- GENERATE THE B-FIELD ---
     ##############################
-    example_var = np.zeros(shape=(len(Epoch_range), int((UserToggles.alt_km_range_end - UserToggles.alt_km_range_start) / UserToggles.alt_km_range_rez) + 1))
+    example_var = np.zeros(shape=(len(Epoch_range), len(alts_range)))
     data_dict_output = {
         'Epoch_model': deepcopy(data_dict_spatial['Epoch_model']),
         'alts_model': deepcopy(data_dict_spatial['alts_model']),

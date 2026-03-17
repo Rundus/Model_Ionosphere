@@ -3,6 +3,9 @@ import numpy as np
 from numpy import power,log,pi
 from spaceToolsLib.variables import kB,q0,m_e,amu
 
+# NOTE: Each of these functions passes the whole file! This allows the code to be very dynamic
+# where using it with many different physics models!
+
 class Nicolet1953:
     def electronNeutral_CollisionFreq(self,data_dict_neutral,data_dict_plasma):
         # nn is given as m^-3 and must be converted to cubic centimeters

@@ -1,0 +1,305 @@
+# --- conductivity_generator.py ---
+# Description: Model the ionospheric conductivity without any input ionization
+
+def generateIonosphericConductivity():
+
+    # --- common imports ---
+    import spaceToolsLib as stl
+    import numpy as np
+    from tqdm import tqdm
+    from glob import glob
+    from src.conductivity.conductivity_classes import *
+    from src.neutral_environment.neutral_toggles import NeutralsToggles
+    from src.plasma_environment.plasma_envionment_toggles import PlasmaToggles
+    from src.user_inputs.user_toggles import UserToggles
+    from copy import deepcopy
+
+    ##########################
+    # --- --- --- --- --- ---
+    # --- LOADING THE DATA ---
+    # --- --- --- --- --- ---
+    ##########################
+
+    # get the spatial environment data
+    data_dict_spatial = stl.loadDictFromFile(glob(rf'{UserToggles.run_folder_path}/spatial_environment.cdf')[0])
+
+    # get the geomagnetic field data dict
+    data_dict_Bgeo = stl.loadDictFromFile(glob(rf'{UserToggles.run_folder_path}/geomagnetic_Field.cdf')[0])
+
+    # get the ionospheric neutral data dict
+    data_dict_neutral = stl.loadDictFromFile(glob(rf'{UserToggles.run_folder_path}/neutral_environment.cdf')[0])
+
+    # get the ionospheric plasma data dict
+    data_dict_plasma = stl.loadDictFromFile(glob(rf'{UserToggles.run_folder_path}/plasma_environment.cdf')[0])
+
+    # Collect the simulation range variables
+    Epoch_range = data_dict_spatial['Epoch_model'][0]
+    glon_range = data_dict_spatial['glons_model'][0]
+    glat_range = data_dict_spatial['glats_model'][0]
+    alts_range = data_dict_spatial['alts_model'][0]
+
+    ############################
+    # --- PREPARE THE OUTPUT ---
+    ############################
+    example_var = np.zeros(shape=(len(Epoch_range), len(alts_range)))
+    data_dict_output = {
+        'Epoch_model':deepcopy(data_dict_spatial['Epoch_model']),
+        'alts_model': deepcopy(data_dict_spatial['alts_model']),
+
+        'nu_e': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': '1/s', 'LABLAXIS': 'nu_e (total)','VAR_TYPE':'support_data'}],
+        'nu_i': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': '1/s', 'LABLAXIS': 'nu_e (total)','VAR_TYPE':'support_data'}],
+
+        'sigma_P_e': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Specific Pedersen Conductivity (electrons)','VAR_TYPE':'support_data'}],
+        'sigma_P_i': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Specific Pedersen Conductivity (ions)','VAR_TYPE':'support_data'}],
+        'sigma_H_e': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Specific Hall Conductivity (electrons)','VAR_TYPE':'support_data'}],
+        'sigma_H_i': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Specific Hall Conductivity (ions)','VAR_TYPE':'support_data'}],
+
+        'sigma_P': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Specific Pedersen Conductivity'}],
+        'sigma_H': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Specific Hall Conductivity'}],
+        'sigma_D': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Specific Parallel Conductivity'}],
+
+        'SIGMA_P': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Height-Integrated Pedersen Conductivity'}],
+        'SIGMA_H': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Height-Integrated Hall Conductivity'}],
+        'SIGMA_D': [deepcopy(example_var), {'DEPEND_0':'Epoch', 'UNITS': 'S/m', 'LABLAXIS': 'Height-Integrated Parallel Conductivity'}],
+    }
+
+
+    #################################
+    # --- Electron Collision Freq ---
+    #################################
+    # nu_en: electron-neutral collisions - Depends on Te and Nn
+    model = Leda2019()
+    nu_en_total = np.sum([model.electronNeutral_CollisionFreq(data_dict_neutral=data_dict_neutral,
+                                                 data_dict_plasma=data_dict_plasma,
+                                                 neutralKey=key) for key in NeutralsToggles.wNeutrals], axis=0)
+
+    # nu_ei: electron-ion collisions - Depends on Te and Ne
+    model = Johnson1961()
+    nu_ei_total = model.electronIon_CollisionFreq(data_dict_neutral, data_dict_plasma, ne_data=data_dict_output['ne_total'][0])
+
+    # nu_e_total: total electron collision rate
+    nu_e_total = nu_en_total + nu_ei_total
+
+    # store the data
+    data_dict_output['nu_e'][0] = nu_e_total
+
+    ############################
+    # --- Ion Collision Freq ---
+    ############################
+    # Determine the collision frequencies for the various different ions
+    model = Leda2019()
+    nu_in_profiles = [model.ionNeutral_CollisionsFreq(data_dict_neutral=data_dict_neutral,
+                                             data_dict_plasma=data_dict_plasma,
+                                             ionKey=key) for key in PlasmaToggles.wIons]  # NOp, Op, O2p
+
+    # store the individual collision freqs
+    data_dict_output = {**data_dict_output,
+                        **{f'nu_i_{key}': [nu_in_profiles[idx], {'DEPEND_0':'Epoch', 'UNITS': '1/s', 'LABLAXIS': f'nu_i_{key}','VAR_TYPE':'support_data'}] for idx, key in enumerate(PlasmaToggles.wIons)},
+                        **{f'nu_i': [np.sum([nu_in_profiles[idx] for idx, key in enumerate(PlasmaToggles.wIons)],axis=0) , {'DEPEND_0':'Epoch', 'UNITS': '1/s', 'LABLAXIS': f'nu_i','VAR_TYPE':'support_data'}]}
+                        }
+
+    ##################
+    # --- Mobility ---
+    ##################
+    # electrons
+    nu_e = data_dict_output['nu_e'][0]
+    Omega_e = data_dict_plasma['Omega_e'][0]
+    kappa_e = np.divide(Omega_e, nu_e)
+    data_dict_output = {**data_dict_output, **{'kappa_e': [kappa_e, {'DEPEND_0':'Epoch', 'UNITS': None, 'LABLAXIS': 'kappa_e'}]}}
+
+    # ions
+    for idx, key in enumerate(PlasmaToggles.wIons):
+        Omega_i_specific = deepcopy(data_dict_plasma[f'Omega_{key}'][0])
+        kappa_i_specific = np.divide(Omega_i_specific, data_dict_output[f'nu_i_{key}'][0])
+        data_dict_output = {**data_dict_output, **{f'kappa_i_{key}': [kappa_i_specific, {'DEPEND_0':'Epoch', 'UNITS': None, 'LABLAXIS': f'kappa_i_{key}'}]}}
+
+    kappa_i = np.sum([data_dict_output[f'kappa_i_{key}'][0] for idx, key in enumerate(PlasmaToggles.wIons)],axis=0)
+    data_dict_output = {**data_dict_output, **{f'kappa_i': [kappa_i, {'DEPEND_0':'Epoch', 'UNITS': None, 'LABLAXIS': f'kappa_i','VAR_TYPE':'support_data'}]}}
+
+    ######################
+    # --- Conductivity ---
+    ######################
+    B_geo = data_dict_Bgeo['Bgeo'][0]
+
+    # calculated electron sigmas
+    sigma_D_e = q0 * np.multiply(np.divide(data_dict_output['ne_total'][0], B_geo), kappa_e)
+    sigma_P_e = q0 * np.multiply(np.divide(data_dict_output['ne_total'][0], B_geo), kappa_e/(1 + np.power(kappa_e, 2)))
+    sigma_H_e = q0 * np.multiply(np.divide(data_dict_output['ne_total'][0], B_geo), np.power(kappa_e, 2)/(1 + np.power(kappa_e, 2)))
+
+    # calculated ion sigmas
+    sigma_D_ions = np.zeros(shape=(len(PlasmaToggles.wIons), len(data_dict_output['simLShell'][0]), len(data_dict_output['simAlt'][0])))
+    sigma_P_ions = np.zeros(shape=(len(PlasmaToggles.wIons), len(data_dict_output['simLShell'][0]), len(data_dict_output['simAlt'][0])))
+    sigma_H_ions = np.zeros(shape=(len(PlasmaToggles.wIons), len(data_dict_output['simLShell'][0]), len(data_dict_output['simAlt'][0])))
+
+    for idx, key in enumerate(PlasmaToggles.wIons):
+        kappa_val = deepcopy(data_dict_output[f'kappa_i_{key}'][0])
+        # specific_ion_concentration = np.divide(data_dict_plasma[f'n_{key}'][0], data_dict_plasma['ni'][0])
+        n_i = data_dict_output['ne_total'][0]*deepcopy(data_dict_plasma[f'C_{key}'][0])
+        sigma_D_ions[idx] = q0 * np.multiply(np.divide(n_i, B_geo), kappa_val)
+        sigma_P_ions[idx] = q0 * np.multiply(np.divide(n_i, B_geo), kappa_val / (1 + np.power(kappa_val, 2)))
+        sigma_H_ions[idx] = q0 * np.multiply(np.divide(n_i, B_geo), np.power(kappa_val, 2) / (1 + np.power(kappa_val, 2)))
+
+
+    # clean the data
+    sigma_P = sigma_P_e + np.sum(sigma_P_ions, axis=0)
+    sigma_P[sigma_P<0] = 0
+    # sigma_Pedersen[np.where(np.isnan(sigma_Pedersen))[0]] = 0
+    sigma_H = sigma_H_e - np.sum(sigma_H_ions, axis=0)
+    sigma_H[sigma_H<0] = 0
+    # sigma_Hall[np.where(np.isnan(sigma_Hall))[0]] = 0
+    sigma_D = sigma_D_e + np.sum(sigma_D_ions, axis=0)
+    # sigma_Parallel[sigma_Parallel<0] = 0
+
+    # Store the data
+    data_dict_output['sigma_P'][0] = sigma_P
+    data_dict_output['sigma_H'][0] = sigma_H
+    data_dict_output['sigma_D'][0] = sigma_D
+
+    data_dict_output['sigma_P_e'][0] = sigma_P_e
+    data_dict_output['sigma_H_e'][0] = sigma_H_e
+
+    data_dict_output['sigma_P_i'][0] = np.sum(sigma_P_ions, axis=0)
+    data_dict_output['sigma_H_i'][0] = np.sum(sigma_H_ions, axis=0)
+
+    #########################################################
+    # --- Background Conductivities for Robinson/Kaeppler ---
+    #########################################################
+    ne_background = deepcopy(data_dict_plasma['ne'][0])
+
+    # collisions
+    model = Leda2019()
+    nu_en_background = np.sum([model.electronNeutral_CollisionFreq(data_dict_neutral=data_dict_neutral,data_dict_plasma=data_dict_plasma, neutralKey=key) for key in NeutralsToggles.wNeutrals],axis=0)
+    model = Johnson1961()
+    nu_ei_background = model.electronIon_CollisionFreq(data_dict_neutral, data_dict_plasma, ne_data=ne_background)
+    nu_e_background = nu_en_total + nu_ei_total
+
+    # Background conductivities
+    kappa_e_background = np.divide(data_dict_plasma['Omega_e'][0], nu_e_background)
+    sigma_D_e_background = q0 * np.multiply(np.divide(ne_background, B_geo), kappa_e)
+    sigma_P_e_background = q0 * np.multiply(np.divide(ne_background, B_geo),kappa_e / (1 + np.power(kappa_e, 2)))
+    sigma_H_e_background = q0 * np.multiply(np.divide(ne_background, B_geo),np.power(kappa_e, 2) / (1 + np.power(kappa_e, 2)))
+    sigma_D_ions_background = np.zeros(shape=(len(PlasmaToggles.wIons), len(data_dict_output['simLShell'][0]), len(data_dict_output['simAlt'][0])))
+    sigma_P_ions_background = np.zeros(shape=(len(PlasmaToggles.wIons), len(data_dict_output['simLShell'][0]), len(data_dict_output['simAlt'][0])))
+    sigma_H_ions_background = np.zeros(shape=(len(PlasmaToggles.wIons), len(data_dict_output['simLShell'][0]), len(data_dict_output['simAlt'][0])))
+    for idx, key in enumerate(PlasmaToggles.wIons):
+        kappa_val = deepcopy(data_dict_output[f'kappa_i_{key}'][0])
+        n_i = ne_background*deepcopy(data_dict_plasma[f'C_{key}'][0])
+        sigma_D_ions_background[idx] = q0 * np.multiply(np.divide(n_i, B_geo), kappa_val)
+        sigma_P_ions_background[idx] = q0 * np.multiply(np.divide(n_i, B_geo), kappa_val / (1 + np.power(kappa_val, 2)))
+        sigma_H_ions_background[idx] = q0 * np.multiply(np.divide(n_i, B_geo), np.power(kappa_val, 2) / (1 + np.power(kappa_val, 2)))
+
+    sigma_P_background = sigma_P_e_background + np.sum(sigma_P_ions_background, axis=0)
+    sigma_P_background[sigma_P_background < 0] = 0
+    sigma_H_background = sigma_H_e_background - np.sum(sigma_H_ions_background, axis=0)
+    sigma_H_background[sigma_H_background < 0] = 0
+    sigma_D_background = sigma_D_e_background + np.sum(sigma_D_ions_background, axis=0)
+    sigma_D_background[sigma_D_background < 0] = 0
+
+    #######################################################
+    # --- Height-Integrated Conductivities (Background) ---
+    #######################################################
+    Sigma_H_HI = np.array([simpson(y=data_dict_output['sigma_H'][0][L_idx], x=data_dict_output['simAlt'][0]) for L_idx in range(len(data_dict_output['simLShell'][0]))])
+    Sigma_P_HI = np.array([simpson(y=data_dict_output['sigma_P'][0][L_idx], x=data_dict_output['simAlt'][0]) for L_idx in range(len(data_dict_output['simLShell'][0]))])
+    Sigma_Parallel_HI = np.array([simpson(y=data_dict_output['sigma_D'][0][L_idx], x=data_dict_output['simAlt'][0]) for L_idx in range(len(data_dict_output['simLShell'][0]))])
+
+    Sigma_H_HI_background = np.array([simpson(y=sigma_H_background[L_idx], x=data_dict_output['simAlt'][0]) for L_idx in range(len(data_dict_output['simLShell'][0]))])
+    Sigma_P_HI_background = np.array([simpson(y=sigma_P_background[L_idx], x=data_dict_output['simAlt'][0]) for L_idx in range(len(data_dict_output['simLShell'][0]))])
+    Sigma_D_HI_background = np.array([simpson(y=sigma_D_background[L_idx], x=data_dict_output['simAlt'][0]) for L_idx in range(len(data_dict_output['simLShell'][0]))])
+
+    data_dict_output = {**data_dict_output,
+                        **{'Sigma_H': [Sigma_H_HI, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Hall Conductivity'}]},
+                        **{'Sigma_P': [Sigma_P_HI, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Pedersen Conductivity'}]},
+                        **{'Sigma_D': [Sigma_Parallel_HI, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Pedersen Conductivity'}]},
+                        }
+
+    ##############################
+    # --- OTHER CONDUCTIVITIES ---
+    ##############################
+
+    # --- Robinson Height-Integrated Conductivities ---
+    Sigma_H_Robinson = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+    Sigma_P_Robinson = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+
+    # --- KAEPPLER Height-Integrated Conductivities ---
+    Sigma_H_K10 = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+    Sigma_P_K10 = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+    Sigma_H_K50 = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+    Sigma_P_K50 = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+    Sigma_H_K90 = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+    Sigma_P_K90 = np.zeros(shape=(len(data_dict_output['simLShell'][0])))
+
+    # Reduce the EEPAA data to the relevant subset
+    for idx1, LShell in enumerate(data_dict_output['simLShell'][0]):
+        # get the flux data for the specific L-Shell
+        dat_idx = np.abs(data_dict_LShell['L-Shell'][0] - LShell).argmin()
+        energy_flux_ergs = (1/stl.erg_to_eV) * deepcopy(data_dict_flux['Phi_E_Parallel'][0][dat_idx])  # convert energy flux to ergs/cm^2 s^1
+        energy_flux_watts = (1000*stl.q0*stl.cm_to_m*stl.cm_to_m)*deepcopy(data_dict_flux['Phi_E_Parallel'][0][dat_idx])  # convert energy flux to mW/m^2
+        avgEnergy_keV = deepcopy(data_dict_flux['Energy_avg'][0][dat_idx]) / 1000  # convert to keV
+
+        # robinson
+        Sigma_P_Robinson[idx1] = ((40 * avgEnergy_keV) / (16 + np.power(avgEnergy_keV, 2))) * np.sqrt(energy_flux_ergs)
+        Sigma_H_Robinson[idx1] = (0.45) * np.power(avgEnergy_keV, 0.85) * Sigma_P_Robinson[idx1]
+
+        # kaeppler
+        Sigma_P_K50[idx1] = 4.93 * np.power(energy_flux_watts, 0.48)
+        Sigma_H_K50[idx1] = 8.11 * np.power(energy_flux_watts, 0.55)
+
+        Sigma_P_K90[idx1] = 5.9*np.power(energy_flux_watts,0.48)
+        Sigma_H_K90[idx1] = 10.77 * np.power(energy_flux_watts, 0.53)
+
+        Sigma_P_K10[idx1] = 3.5 * np.power(energy_flux_watts, 0.49)
+        Sigma_H_K10[idx1] = 5.19 * np.power(energy_flux_watts, 0.56)
+
+
+    data_dict_output = {**data_dict_output,
+                        **{'Sigma_H_Robinson': [Sigma_H_Robinson + Sigma_H_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Hall Conductivity'}]},
+                        **{'Sigma_P_Robinson': [Sigma_P_Robinson+ Sigma_P_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Pedersen Conductivity'}]},
+                        **{'Sigma_H_K10': [Sigma_H_K10+ Sigma_H_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Hall Conductivity'}]},
+                        **{'Sigma_P_K10': [Sigma_P_K10+ Sigma_P_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Pedersen Conductivity'}]},
+                        **{'Sigma_H_K50': [Sigma_H_K50+ Sigma_H_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Hall Conductivity'}]},
+                        **{'Sigma_P_K50': [Sigma_P_K50+ Sigma_P_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Pedersen Conductivity'}]},
+                        **{'Sigma_H_K90': [Sigma_H_K90+ Sigma_H_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Hall Conductivity'}]},
+                        **{'Sigma_P_K50': [Sigma_P_K90+ Sigma_P_HI_background, {'DEPEND_0': 'simLShell', 'UNITS': 'S', 'LABLAXIS': 'Height-Integrated Pedersen Conductivity'}]},
+                        }
+
+
+    ############################################
+    # --- Conductivity Gradients for the PDE ---
+    ############################################
+    div_sigma_P_N = np.zeros(shape=(len(SpatialToggles.simLShell),len(SpatialToggles.simAlt)))
+    div_sigma_H_N = np.zeros(shape=(len(SpatialToggles.simLShell), len(SpatialToggles.simAlt)))
+
+    for idx in range(len(altRange)):
+        gradients = deepcopy(data_dict_spatial['grid_dx'][0][:, idx])
+        initial_point = gradients[0]
+        position_points = np.array([np.sum(gradients[0:i + 1]) - initial_point for i in range(len(gradients))])
+
+        div_sigma_P_N[:, idx] = np.gradient(data_dict_output['sigma_P'][0][:, idx], position_points)
+        div_sigma_H_N[:, idx] = np.gradient(data_dict_output['sigma_H'][0][:, idx], position_points)
+
+
+    data_dict_output = {**data_dict_output,
+                        **{'div_sigma_P_N': [div_sigma_P_N, {'DEPEND_0': 'simLShell','DEPEND_1': 'simAlt', 'UNITS': 'S/m^2', 'LABLAXIS': 'Div_perp sigma_P'}]},
+                        **{'div_sigma_H_N': [div_sigma_H_N, {'DEPEND_0': 'simLShell','DEPEND_1': 'simAlt', 'UNITS': 'S/m^2', 'LABLAXIS': 'Div_perp sigma_H'}]}
+                        }
+
+    #####################
+    # --- OUTPUT DATA ---
+    #####################
+    # --- Construct the Data Dict ---
+    exampleVar = {'DEPEND_0': None, 'DEPEND_1': None, 'DEPEND_2': None, 'FILLVAL': -9223372036854775808,
+                  'FORMAT': 'I5', 'UNITS': None, 'VALIDMIN': None, 'VALIDMAX': None, 'VAR_TYPE': 'data',
+                  'SCALETYP': 'linear', 'LABLAXIS': 'simAlt'}
+
+
+    # update the data dict attrs
+    for key, val in data_dict_output.items():
+        newAttrs = deepcopy(exampleVar)
+
+        for subKey, subVal in data_dict_output[key][1].items():
+            newAttrs[subKey] = subVal
+
+        data_dict_output[key][1] = newAttrs
+
+    outputPath = rf'{ConductivityToggles.outputFolder}/conductivity.cdf'
+    stl.outputDataDict(outputPath, data_dict_output)

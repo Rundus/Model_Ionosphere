@@ -38,9 +38,14 @@ if dict_executable['regen_geomagnetic_field']==1:
     from src.geomagnetic_field.geomagnetic_field_generator import geomagnetic_field_generator
     geomagnetic_field_generator()
 
+if dict_executable['regen_neutral_environment']==1:
+    print('\n---Regenerating neutral environment ---',end='\n')
+    from src.neutral_environment.neutral_environment_generator import neutral_environment_generator
+    neutral_environment_generator()
+
 
 if dict_executable['regen_conductivity'] == 1:
     print('\n--- Calculating Ionospheric Conductivity ---', end='\n')
-    from src.conductivity.IRI_conductivity_generator import generate_IRI_conductivity
+    from src.conductivity.conductivity_generator import generate_IRI_conductivity
     generate_IRI_conductivity()
 

@@ -22,6 +22,7 @@ def generate_IRI_profile_from_ephemeris():
     Epoch_range = data_dict_spatial['Epoch_model'][0]
     glon_range = data_dict_spatial['glons_model'][0]
     glat_range = data_dict_spatial['glats_model'][0]
+    alts_range = data_dict_spatial['alts_model'][0]
 
     # --- --- --- --- --- --
     # --- CREATE THE RUN ---
@@ -29,7 +30,7 @@ def generate_IRI_profile_from_ephemeris():
 
     # --- RUN THE IRI MODEL ---
     # prepare the output
-    example_var = np.zeros(shape=(len(Epoch_range), int((UserToggles.alt_km_range_end - UserToggles.alt_km_range_start) / UserToggles.alt_km_range_rez) + 1))
+    example_var = np.zeros(shape=(len(Epoch_range), len(alts_range)))
     data_dict_output = {
         'Epoch': deepcopy(data_dict_spatial['Epoch_model']),
         'alt': deepcopy(data_dict_spatial['alts_model']),
